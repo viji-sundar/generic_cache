@@ -22,6 +22,9 @@ cachePT cacheAllocate(int c, int b, int s, int wp, int rp )
    cacheP->tagStore       = (blockPT*)calloc(cacheP->rows, sizeof(blockPT));
    for(int i = 0; i < cacheP->rows; i++) {
       cacheP->tagStore[i] = (blockPT)calloc(cacheP->assoc, sizeof(blockT));
+      for(int j = 0; j < cacheP->assoc; j++) {
+         cacheP->tagStore[i][j].count = j;
+      }
    }
    return cacheP;
 }
@@ -54,7 +57,7 @@ bool read ( cachePT cacheP, int address )
       cacheMiss(cacheP);
    }
    else { // HIT
-      updateLRU(cacheP, hitIndex);
+      updateCounters(cacheP, hitIndex);
    }
    return cond;
 }
@@ -74,7 +77,7 @@ bool write (cachePT cacheP, int address)
       }
    }
    else { // HIT
-      updateLRU(cacheP, hitIndex);
+      updateCounters(cacheP, hitIndex);
       if(cacheP->writePolicy == WBWA) {
          cacheP->tagStore[cacheP->index][hitIndex].dirtyBit = 1;
       }
@@ -99,6 +102,18 @@ bool searchTagStore (cachePT cacheP, int* hitIndex)
       }
    }
    return false;
+}
+
+/*!proto*/
+void updateCounters( cachePT cacheP, int hitIndex )
+/*!endproto*/
+{
+   updateLRU( cacheP, hitIndex );
+}
+
+void updateLFU(cachePT cacheP, int hitIndex)
+{
+   //
 }
 
 // 6. updateLRU ( )
@@ -149,8 +164,9 @@ int cacheMiss(cachePT cacheP)
    }
    // Cache data at evicted/empty place
    cacheP->tagStore[cacheP->index][empty].tag = cacheP->tag;
+   cacheP->tagStore[cacheP->index][empty].validBit = 1;
    // Update LRU of that block
-   updateLRU(cacheP, empty);
+   updateCounters(cacheP, empty);
    return empty;
 }
 
@@ -159,8 +175,9 @@ void printTagstore (cachePT cacheP)
 /*!endproto*/
 {
    for(int i = 0; i < cacheP->rows; i++) {
+      printf("set %d: ", i);
       for(int j = 0; j < cacheP->assoc; j++) {
-         printf("set %d: %x %c", i, cacheP->tagStore[i][j].tag, cacheP->tagStore[i][j].dirtyBit ? 'D' : ' ');   
+         printf("%x %c ", cacheP->tagStore[i][j].tag, cacheP->tagStore[i][j].dirtyBit ? 'D' : ' ');   
       }
       printf("\n");
    }  

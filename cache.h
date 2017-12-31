@@ -31,6 +31,15 @@ typedef struct _cacheT {
    int        writePolicy;
    int        replacePolicy;
 
+
+   int        reads;
+   int        writes;
+   int        readMisses;
+   int        writeMisses;
+   int        writeBacks;
+   float      missPenalty;
+   float      hitTime;
+
    int        rows;
 
    int        index;

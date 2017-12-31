@@ -2,14 +2,14 @@ import re
 import sys
 
 ## Build the regex
-regex    = r"\/[*]!proto[*]\/\s*(.*)\s*\/[*]!endproto[*]\/"
+regex    = r"\/[*]!proto[*]\/\s*(.*?)\/[*]!endproto[*]\/"
 fileName = sys.argv[1]
 
 ## Open file passed as command line argument
 text     = open( fileName, 'r' ).read()
 
 ## Do the match
-matches  = re.finditer(regex, text, re.MULTILINE)
+matches  = re.finditer(regex, text, re.MULTILINE | re.DOTALL)
 
 define   = '_' + fileName.replace('.', '_').upper()
 print '#ifndef ' + define

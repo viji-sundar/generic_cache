@@ -54,10 +54,12 @@ void getIndexAndTag(cachePT cacheP, unsigned int address)
 bool read ( cachePT cacheP, int address )
 /*!endproto*/
 {
+   cacheP->reads++;
    int hitIndex;
    getIndexAndTag(cacheP, address);
    bool cond = searchTagStore(cacheP, &hitIndex);
    if(!cond) { // MISS
+      cacheP->readMisses++;
       cacheMiss(cacheP);
    }
    else { // HIT
@@ -71,10 +73,12 @@ bool read ( cachePT cacheP, int address )
 bool write (cachePT cacheP, int address) 
 /*!endproto*/
 {
+   cacheP->writes++;
    int hitIndex;
    getIndexAndTag(cacheP, address);
    bool cond = searchTagStore(cacheP, &hitIndex);
    if(!cond) { // MISS
+      cacheP->writeMisses++;
       if(cacheP->writePolicy == WBWA) {
         int dirtyAt = cacheMiss(cacheP);
         cacheP->tagStore[cacheP->index][dirtyAt].dirtyBit = 1;
@@ -175,6 +179,7 @@ int cacheMiss(cachePT cacheP)
    // Check if dirty. If yes, do a writeback
    if(cacheP->tagStore[cacheP->index][empty].dirtyBit == 1) {
       //write(cacheP, next-level-address);
+      cacheP->writeBacks++;
       cacheP->tagStore[cacheP->index][empty].dirtyBit = 0; 
    }
    // Cache data at evicted/empty place
@@ -185,7 +190,10 @@ int cacheMiss(cachePT cacheP)
    return empty;
 }
 
-int getEvictionLRU(cachePT cacheP) {
+/*!proto*/
+int getEvictionLRU(cachePT cacheP) 
+/*!endproto*/
+{
    for(int j = 0; j < cacheP->assoc; j++) {
       if(cacheP->tagStore[cacheP->index][j].count == cacheP->assoc-1) {
          return j;
@@ -193,7 +201,10 @@ int getEvictionLRU(cachePT cacheP) {
    } 
 }
 
-int getEvictionLFU(cachePT cacheP) {
+/*!proto*/
+int getEvictionLFU(cachePT cacheP) 
+/*!endproto*/
+{
    int min   = cacheP->tagStore[cacheP->index][0].count; 
    int empty = 0; 
    for(int j = 1; j < cacheP->assoc; j++) {
@@ -210,6 +221,7 @@ int getEvictionLFU(cachePT cacheP) {
 void printTagstore (cachePT cacheP)
 /*!endproto*/
 {
+   printf("===== L1 contents =====\n");
    for(int i = 0; i < cacheP->rows; i++) {
       printf("set %d: ", i);
       for(int j = 0; j < cacheP->assoc; j++) {
@@ -217,4 +229,34 @@ void printTagstore (cachePT cacheP)
       }
       printf("\n");
    }  
+}
+
+/*!proto*/
+void getResults ( cachePT cacheP, 
+                  int*    reads, 
+                  int*    writes, 
+                  int*    readMisses, 
+                  int*    writeMisses,
+                  float*  missRate,
+                  int*    writeBacks, 
+                  int*    memTraffic,
+                  float*  AAT ) 
+/*!endproto*/
+{
+   *reads              = cacheP->reads;
+   *writes             = cacheP->writes;
+   *readMisses         = cacheP->readMisses;
+   *writeMisses        = cacheP->writeMisses;
+   *writeBacks         = cacheP->writeBacks;
+   *missRate           = (float)(*readMisses + *writeMisses)/(float)(*reads + *writes);
+
+   cacheP->hitTime     = 0.25 + (2.5 * (cacheP->cSize/524288.0)) + (0.025 * (cacheP->bSize/16.0)) + (0.025 * cacheP->assoc);
+   cacheP->missPenalty = 20.0 + 0.5*(cacheP->bSize/16.0);
+
+   *AAT                = cacheP->hitTime + ((*missRate) * (cacheP->missPenalty)); 
+
+   if(cacheP->writePolicy == WBWA)
+      *memTraffic      = *writeBacks + *readMisses + *writeMisses;
+   else
+      *memTraffic      = *readMisses + *writes;
 }

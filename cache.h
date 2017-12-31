@@ -7,6 +7,8 @@
 #define ADDRESS_WIDTH 32
 #define WBWA          0
 #define WTNA          1
+#define LRU           0
+#define LFU           1
 
 //Pointers of the defined structures
 typedef struct _blockT* blockPT;

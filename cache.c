@@ -18,16 +18,29 @@ cachePT cacheAllocate(int c, int b, int s, int wp, int rp )
    cacheP->writePolicy     = wp;
    cacheP->replacePolicy   = rp;
    cacheP->rows            = cacheP->cSize/(cacheP->bSize*cacheP->assoc);
+   
    // Allocate memory for the cache as a 2D- array
    cacheP->tagStore       = (blockPT*)calloc(cacheP->rows, sizeof(blockPT));
-   for(int i = 0; i < cacheP->rows; i++) {
-      cacheP->tagStore[i] = (blockPT)calloc(cacheP->assoc, sizeof(blockT));
-      for(int j = 0; j < cacheP->assoc; j++) {
-         cacheP->tagStore[i][j].count = j;
+
+   if(rp == LRU){  
+      for(int i = 0; i < cacheP->rows; i++) {
+         cacheP->tagStore[i] = (blockPT)calloc(cacheP->assoc, sizeof(blockT));
+         for(int j = 0; j < cacheP->assoc; j++) {
+            cacheP->tagStore[i][j].count = j;
+         }
+      }
+   }
+   else if (rp == LFU) {
+      for(int i = 0; i < cacheP->rows; i++) {
+         cacheP->tagStore[i] = (blockPT)calloc(cacheP->assoc, sizeof(blockT));
+         for(int j = 0; j < cacheP->assoc; j++) {
+            cacheP->tagStore[i][j].count = 0;
+         }
       }
    }
    return cacheP;
 }
+
 //2. getIndexAndTag( address )
 //   Obtain index and tag from the decoded address
 /*!proto*/
@@ -108,17 +121,23 @@ bool searchTagStore (cachePT cacheP, int* hitIndex)
 void updateCounters( cachePT cacheP, int hitIndex )
 /*!endproto*/
 {
-   updateLRU( cacheP, hitIndex );
+   if(cacheP->replacePolicy == LRU)
+      updateLRU( cacheP, hitIndex );
+   else if(cacheP->replacePolicy == LFU)
+      updateLFU( cacheP, hitIndex );
 }
 
+/*!proto*/
 void updateLFU(cachePT cacheP, int hitIndex)
+/*!endproto*/
 {
-   //
+   cacheP->tagStore[cacheP->index][hitIndex].count++;
 }
 
 // 6. updateLRU ( )
 //    set current index counter to 0
 //    Increment rest until present counter if a hit; Increment all if a miss
+
 /*!proto*/
 void updateLRU(cachePT cacheP, int hitIndex)
 /*!endproto*/
@@ -131,9 +150,11 @@ void updateLRU(cachePT cacheP, int hitIndex)
    }
    cacheP->tagStore[cacheP->index][hitIndex].count = 0;
 }
+
 // 7. cacheMiss ( )
 //    Check for victim blocks based on the valid bit
 //    replace / evict based on the replacement (LRU) policy
+
 /*!proto*/
 int cacheMiss(cachePT cacheP) 
 /*!endproto*/
@@ -146,15 +167,32 @@ int cacheMiss(cachePT cacheP)
          break;
       }
    }
-   // Search for victim block
-   if(empty == -1) {
-      for(int j = 0; j < cacheP->assoc; j++) {
-         if(cacheP->tagStore[cacheP->index][j].count == cacheP->assoc-1) {
-            empty = j;
-            break;
-         }
-      } 
+   // Search for victim block for LRU Policy
+   if(cacheP->replacePolicy == LRU) {
+      if(empty == -1) {
+         for(int j = 0; j < cacheP->assoc; j++) {
+            if(cacheP->tagStore[cacheP->index][j].count == cacheP->assoc-1) {
+               empty = j;
+               break;
+            }
+         } 
+      }
    }
+
+   //Search for victim block for LFU policy
+   else if(cacheP->replacePolicy == LFU) {
+      if(empty == -1) {
+         int min = cacheP->tagStore[cacheP->index][0].count; 
+         empty = 0;
+         for(int j = 0; j < cacheP->assoc; j++) {
+            if(min > cacheP->tagStore[cacheP->index][j].count) {
+               min = cacheP->tagStore[cacheP->index][j].count;
+               empty = j;
+            }
+         } 
+      }
+   }
+
    // Do a read request
    // read(cacheP, next-level-address);
    // Check if dirty. If yes, do a writeback
@@ -165,7 +203,7 @@ int cacheMiss(cachePT cacheP)
    // Cache data at evicted/empty place
    cacheP->tagStore[cacheP->index][empty].tag = cacheP->tag;
    cacheP->tagStore[cacheP->index][empty].validBit = 1;
-   // Update LRU of that block
+   // Update LFU and LRU of that block
    updateCounters(cacheP, empty);
    return empty;
 }

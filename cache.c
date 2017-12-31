@@ -21,20 +21,11 @@ cachePT cacheAllocate(int c, int b, int s, int wp, int rp )
    
    // Allocate memory for the cache as a 2D- array
    cacheP->tagStore       = (blockPT*)calloc(cacheP->rows, sizeof(blockPT));
-
-   if(rp == LRU){  
-      for(int i = 0; i < cacheP->rows; i++) {
-         cacheP->tagStore[i] = (blockPT)calloc(cacheP->assoc, sizeof(blockT));
+   for(int i = 0; i < cacheP->rows; i++) {
+      cacheP->tagStore[i] = (blockPT)calloc(cacheP->assoc, sizeof(blockT));
+      if(rp == LRU) {
          for(int j = 0; j < cacheP->assoc; j++) {
             cacheP->tagStore[i][j].count = j;
-         }
-      }
-   }
-   else if (rp == LFU) {
-      for(int i = 0; i < cacheP->rows; i++) {
-         cacheP->tagStore[i] = (blockPT)calloc(cacheP->assoc, sizeof(blockT));
-         for(int j = 0; j < cacheP->assoc; j++) {
-            cacheP->tagStore[i][j].count = 0;
          }
       }
    }
@@ -167,30 +158,16 @@ int cacheMiss(cachePT cacheP)
          break;
       }
    }
-   // Search for victim block for LRU Policy
-   if(cacheP->replacePolicy == LRU) {
-      if(empty == -1) {
-         for(int j = 0; j < cacheP->assoc; j++) {
-            if(cacheP->tagStore[cacheP->index][j].count == cacheP->assoc-1) {
-               empty = j;
-               break;
-            }
-         } 
-      }
-   }
 
-   //Search for victim block for LFU policy
-   else if(cacheP->replacePolicy == LFU) {
-      if(empty == -1) {
-         int min = cacheP->tagStore[cacheP->index][0].count; 
-         empty = 0;
-         for(int j = 0; j < cacheP->assoc; j++) {
-            if(min > cacheP->tagStore[cacheP->index][j].count) {
-               min = cacheP->tagStore[cacheP->index][j].count;
-               empty = j;
-            }
-         } 
-      }
+   // If an empty block is not found, search using replacement policy
+   if(empty == -1) {
+      // Search for victim block for LRU Policy
+      if(cacheP->replacePolicy == LRU)
+         empty = getEvictionLRU(cacheP);
+
+      //Search for victim block for LFU policy
+      else if(cacheP->replacePolicy == LFU) 
+         empty = getEvictionLFU(cacheP);
    }
 
    // Do a read request
@@ -207,6 +184,27 @@ int cacheMiss(cachePT cacheP)
    updateCounters(cacheP, empty);
    return empty;
 }
+
+int getEvictionLRU(cachePT cacheP) {
+   for(int j = 0; j < cacheP->assoc; j++) {
+      if(cacheP->tagStore[cacheP->index][j].count == cacheP->assoc-1) {
+         return j;
+      }
+   } 
+}
+
+int getEvictionLFU(cachePT cacheP) {
+   int min   = cacheP->tagStore[cacheP->index][0].count; 
+   int empty = 0; 
+   for(int j = 1; j < cacheP->assoc; j++) {
+      if(min > cacheP->tagStore[cacheP->index][j].count) {
+         min = cacheP->tagStore[cacheP->index][j].count;
+         empty = j;
+      }
+   } 
+   return empty;
+}
+
 
 /*!proto*/
 void printTagstore (cachePT cacheP)

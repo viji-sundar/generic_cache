@@ -11,9 +11,9 @@ text     = open( fileName, 'r' ).read()
 ## Do the match
 matches  = re.finditer(regex, text, re.MULTILINE | re.DOTALL)
 
-define   = '_' + fileName.replace('.', '_').upper()
+define   = '_' + fileName.replace('.', '_').replace('/', '_').upper()
 print '#ifndef ' + define
 print '#define ' + define + '\n'
 for matchNum, match in enumerate(matches):
-    print str(match.group(1)).strip() + ';'
+    print str(match.group(1)).strip() + '\n;'
 print '\n#endif'

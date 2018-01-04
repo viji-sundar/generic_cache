@@ -1,12 +1,13 @@
 #include "cache.h"
 
 #define LOG_2(A) ceil( log(A)/log(2) )
+#define F(x) pow(0.5, cacheP->lambda*(x))
 
 //-------------------------POSSIBLE FUNCTIONS----------------------------------//
 /*!proto*/
 //1. cacheAllocate(cSize, bSize, assoc)
 //   Function allocates an array to of the appropriate sizes
-cachePT cacheAllocate(int c, int b, int s, int wp, int rp, petriDishPT t ) 
+cachePT cacheAllocate(int c, int b, int s, int wp, double lambda, petriDishPT t ) 
 // Hello
 /*!endproto*/
 {
@@ -18,14 +19,15 @@ cachePT cacheAllocate(int c, int b, int s, int wp, int rp, petriDishPT t )
    cacheP->bSize           = b;
    cacheP->assoc           = s;
    cacheP->writePolicy     = wp;
-   cacheP->replacePolicy   = rp;
+   cacheP->replacePolicy   = lambda == LFU ? LFU : (lambda == LRU ? LRU : LRFU );
+   cacheP->lambda          = lambda;
    cacheP->rows            = cacheP->cSize/(cacheP->bSize*cacheP->assoc);
    
    // Allocate memory for the cache as a 2D- array
    cacheP->tagStore        = (blockPT*)calloc(cacheP->rows, sizeof(blockPT));
    for(int i = 0; i < cacheP->rows; i++) {
       cacheP->tagStore[i]  = (blockPT)calloc(cacheP->assoc, sizeof(blockT));
-      if(rp == LRU) {
+      if(cacheP->replacePolicy == LRU) {
          for(int j = 0; j < cacheP->assoc; j++) {
             cacheP->tagStore[i][j].count = j;
          }
@@ -62,6 +64,7 @@ bool read ( cachePT cacheP, int address )
    if( cacheP == NULL ) return true;
 
    cacheP->reads++;
+   cacheP->globalCount++;
    int hitColumn;
    getIndexAndTag(cacheP, address);
    if(!searchTagStore(cacheP, &hitColumn)) { //MISS
@@ -91,6 +94,7 @@ bool write (cachePT cacheP, int address)
    if( cacheP == NULL ) return true;
 
    cacheP->writes++;
+   cacheP->globalCount++;
    int hitColumn;
    getIndexAndTag(cacheP, address);
    bool cond = searchTagStore(cacheP, &hitColumn);
@@ -144,9 +148,11 @@ void updateCounters( cachePT cacheP, int hitColumn )
 /*!endproto*/
 {
    if(cacheP->replacePolicy == LRU)
-      updateLRU( cacheP, hitColumn );
+      updateLRU(cacheP, hitColumn);
    else if(cacheP->replacePolicy == LFU)
-      updateLFU( cacheP, hitColumn );
+      updateLFU(cacheP, hitColumn);
+   else
+      updateLRFU(cacheP, hitColumn);
 }
 
 /*!proto*/
@@ -170,6 +176,18 @@ void updateLRU(cachePT cacheP, int hitColumn)
          cacheP->tagStore[cacheP->index][j].count++;
    }
    cacheP->tagStore[cacheP->index][hitColumn].count = 0;
+}
+
+/*!proto*/
+void updateLRFU( cachePT cacheP, int hitColumn)
+/*!endproto*/
+{
+    double crf                                         = cacheP->tagStore[cacheP->index][hitColumn].crf;
+    int    gc                                          = cacheP->globalCount;
+    int    lastRef                                     = cacheP->tagStore[cacheP->index][hitColumn].count;
+
+    cacheP->tagStore[cacheP->index][hitColumn].crf     = 1.0 + F(gc - lastRef)*crf;
+    cacheP->tagStore[cacheP->index][hitColumn].count   = gc;
 }
 
 /*!proto*/
@@ -231,8 +249,24 @@ int cacheMiss(cachePT cacheP, int address)
    cacheP->tagStore[cacheP->index][empty].tag = cacheP->tag;
    cacheP->tagStore[cacheP->index][empty].validBit = 1;
    // Update LFU and LRU of that block
-   updateCounters(cacheP, empty);
+   updateCMiss(cacheP, empty);
    return empty;
+}
+
+#define GET_COL(j) cacheP->tagStore[cacheP->index][j]
+
+/*!proto*/
+void updateCMiss(cachePT cacheP, int empty)
+/*!endproto*/
+{
+   if(cacheP->replacePolicy == LRU)
+      updateLRU(cacheP, empty);
+   else if(cacheP->replacePolicy == LFU)
+      updateLFU(cacheP, empty);
+   else {
+      GET_COL(empty).crf   = 1.0;
+      GET_COL(empty).count = cacheP->globalCount;
+   }
 }
 
 /*!proto*/
@@ -241,8 +275,10 @@ int getEviction(cachePT cacheP)
 {
    if(cacheP->replacePolicy == LRU)
       return getEvictionLRU(cacheP);
-   else
+   else if(cacheP->replacePolicy == LFU)
       return getEvictionLFU(cacheP); 
+   else
+      return getEvictionLRFU(cacheP);
 }
 
 /*!proto*/
@@ -265,6 +301,23 @@ int getEvictionLFU(cachePT cacheP)
    for(int j = 1; j < cacheP->assoc; j++) {
       if(min > cacheP->tagStore[cacheP->index][j].count) {
          min = cacheP->tagStore[cacheP->index][j].count;
+         empty = j;
+      }
+   } 
+   return empty;
+}
+
+
+/*!proto*/
+int getEvictionLRFU(cachePT cacheP)
+/*!endproto*/
+{
+   double min   = F(cacheP->globalCount - GET_COL(0).count)*GET_COL(0).crf;
+   int empty = 0; 
+   for(int j = 1; j < cacheP->assoc; j++) {
+      double crf = F(cacheP->globalCount - GET_COL(j).count)*GET_COL(j).crf;
+      if(min > crf){
+         min = crf;
          empty = j;
       }
    } 
@@ -383,8 +436,8 @@ int cacheSwap (cachePT cacheP, int address, int vicHitCol)
    cacheP->victimCache->tagStore[cacheP->victimCache->index][vicHitCol].dirtyBit = l1Dirty;
    //------------------ SWAP DIRTY BIT END -----------------------
 
-   updateCounters(cacheP->victimCache, vicHitCol);
-   updateCounters(cacheP, col);
+   updateCMiss(cacheP->victimCache, vicHitCol);
+   updateCMiss(cacheP, col);
    return col;
 }
 

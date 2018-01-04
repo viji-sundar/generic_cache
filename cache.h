@@ -5,15 +5,20 @@
 #include<stdbool.h>
 
 // BUGS FIXED:
-// 1. Missing init counters for replacement policies. (All 0s for LFU, 
-//    [0,assoc-1] for LRU)
-// 2. During write hit, dirty bit was not being set (WBWA) which 
-//    caused issues in read followed by writes (Write hit)
-// 3. Valid bit was not being set to 1 during data placement
-// 4. For writeback, address corresponding to the block being evicted
-//    was not passed.
-// 5. For misses (W/R), writeback has to be done prior to reading 
-//    and allocating the block
+// 1.  Missing init counters for replacement policies. (All 0s for LFU, 
+//     [0,assoc-1] for LRU)
+// 2.  During write hit, dirty bit was not being set (WBWA) which 
+//     caused issues in read followed by writes (Write hit)
+// 3.  Valid bit was not being set to 1 during data placement
+// 4.  For writeback, address corresponding to the block being evicted
+//     was not passed.
+// 5.  For misses (W/R), writeback has to be done prior to reading 
+//     and allocating the block
+// 6.  Read miss counter wrongly placed when victim was a hit
+// 7.  Transfer dirty bit along with address during cache to victim transfer
+// 8.  cache2Victim has to be done IFF !emptyFromI & victimCache != NULL
+// 9.  L2 has to be updated when victim is present and has a writeback
+// 10. Cache swap is considered a miss counter update (matters in LRFU)
 
 // EXISTING BUGS:
 // -NA-
@@ -21,6 +26,7 @@
 #define ADDRESS_WIDTH 32
 #define WBWA          0
 #define WTNA          1
+#define LRFU          0
 #define LRU           2
 #define LFU           3
 
@@ -36,6 +42,7 @@ typedef struct _blockT {
    int        validBit;
    int        dirtyBit;
    int        count;
+   double     crf;
 }blockT;
 
 typedef struct _petriDishT {
@@ -58,6 +65,7 @@ typedef struct _cacheT {
    int        assoc;
    int        writePolicy;
    int        replacePolicy;
+   double     lambda; 
 
    cachePT    nextLevelCache;
    cachePT    victimCache;
@@ -71,6 +79,7 @@ typedef struct _cacheT {
    float      hitTime;
    int        swaps;
    int        victimBit;
+   int        globalCount;
 
    int        rows;
 
